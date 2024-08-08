@@ -5,7 +5,9 @@ from telegram import Bot
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+import pandas as pd
+
 
 
 
@@ -42,90 +44,90 @@ def fetch_predictions(fixture_id):
         print(f"Error fetching prediction for fixture {fixture_id}: {response.status_code}")
         return None
 
-def fetch_fixtures():
+def fetch_fixtures(start_date, end_date):
     leagues = ["333", "71", "227", "387", "330", "108", "343"]  # Replace with league IDs for the leagues you want to be displayed
-    all_fixtures = []
-    league_fixtures = defaultdict(list)
+    fixtures_by_date = {}
 
-    for league_id in leagues:
-        url = f"{API_FOOTBALL_URL}fixtures"
-        querystring = {
-            "date":  datetime.today().strftime('%Y-%m-%d'), #"2024-08-03", 
-            "league": league_id,
-            "season": "2024"
-        }
-        response = requests.get(url, headers=headers, params=querystring)
-        if response.status_code == 200:
-            fixtures = response.json().get('response', [])
-            for fixture in fixtures:
-                status = fixture['fixture']['status']['long']
-                if status == "Not Started":
-                    home_team = fixture['teams']['home']['name']
-                    away_team = fixture['teams']['away']['name']
-                    match_time = fixture['fixture']['date']
-                    fixture_id = fixture['fixture']['id']
-                    league_name = fixture['league']['name']
-                    country = fixture['league']['country']
-                    
-                    # Fetch prediction for this fixture
-                    prediction = fetch_predictions(fixture_id)
-                    
-                    fixture_info = {
-                        'league': league_id,
-                        'league_name': league_name,
-                        'country': country,
-                        'fixture_id': fixture_id,
-                        'home_team': home_team,
-                        'away_team': away_team,
-                        'match_time': match_time,
-                        'prediction': prediction
-                    }
-                    
-                    # Add to the overall list
-                    all_fixtures.append(fixture_info)
-                    
-                    # Add to the league-specific list
-                    league_fixtures[league_id].append(fixture_info)
-            
-        else:
-            print(f"Error fetching league {league_id}: {response.status_code}")
-            print(f"Response Text: {response.text}")
+    for date in pd.date_range(start_date, end_date):
+        date_str = date.strftime('%Y-%m-%d')
+        fixtures_by_date[date_str] = []
 
-    return league_fixtures
+        for league_id in leagues:
+            url = f"{API_FOOTBALL_URL}fixtures"
+            querystring = {
+                "date": date_str,
+                "league": league_id,
+                "season": "2024"
+            }
+            response = requests.get(url, headers=headers, params=querystring)
+            if response.status_code == 200:
+                fixtures = response.json().get('response', [])
+                for fixture in fixtures:
+                    status = fixture['fixture']['status']['long']
+                    if status == "Not Started":
+                        home_team = fixture['teams']['home']['name']
+                        away_team = fixture['teams']['away']['name']
+                        match_time = fixture['fixture']['date']
+                        fixture_id = fixture['fixture']['id']
+                        league_name = fixture['league']['name']
+                        country = fixture['league']['country']
+
+                        # Fetch prediction for this fixture
+                        prediction = fetch_predictions(fixture_id)
+
+                        fixture_info = {
+                            'league': league_id,
+                            'league_name': league_name,
+                            'country': country,
+                            'fixture_id': fixture_id,
+                            'home_team': home_team,
+                            'away_team': away_team,
+                            'match_time': match_time,
+                            'prediction': prediction
+                        }
+
+                        fixtures_by_date[date_str].append(fixture_info)
+            else:
+                print(f"Error fetching league {league_id}: {response.status_code}")
+                print(f"Response Text: {response.text}")
+
+    return fixtures_by_date
 
 
 async def format_and_send_fixtures(bot):
-    league_fixtures = fetch_fixtures()
+    start_date = datetime.today()
+    end_date = start_date + timedelta(days=2)
+    fixtures_by_date = fetch_fixtures(start_date.date(), end_date.date())
 
-    if not any(fixtures for fixtures in league_fixtures.values()):
+    if not any(fixtures for fixtures in fixtures_by_date.values()):
         logger.info("No fixtures found. No message sent.")
         return
     
+
     # Start with the overall title
-    message = "*⚽ Next 24 hours matches and predictions 🤑*\n\n"
-    
-    for league_id, fixtures in league_fixtures.items():
-        valid_fixtures = [f for f in fixtures if f['prediction'] != "No predictions available"]
-        if valid_fixtures:
-            # Add league title
-            message += f"*⚽ {valid_fixtures[0]['country']} - {valid_fixtures[0]['league_name']} Fixtures*\n\n"
-            
+    message = "*⚽ Upcoming 3 days matches and predictions 🤑*\n\n"
+
+    for date, fixtures in fixtures_by_date.items():
+        if fixtures:
+            # Add date heading
+            message += f"*{datetime.strptime(date, '%Y-%m-%d').strftime('%d/%m/%Y')} Fixtures:*\n\n"
+
+            valid_fixtures = [f for f in fixtures if f['prediction'] != "No predictions available"]
             for i, fixture in enumerate(valid_fixtures, 1):
                 prediction = fixture['prediction'].replace('*', r'\*').replace('_', r'\_').replace('[', r'\[').replace(']', r'\]')
                 message += f"{i}. {fixture['home_team']} vs {fixture['away_team']}\n"
                 message += f"   🏆 Prediction: {prediction}\n\n"
-            
-            # Add a separator between leagues
+
+            # Add a separator between dates
             message += "\n\n"
-    
+
     # Remove the last separator
     message = message.rstrip("\n-")
 
     # Add the promotional sentences
     message += "\n\n"  # Add some space before the promotional content
-    message += "Get 200% bonus 💰 on Melbet, use Promo code: BNS 👉 [melbet.com](http://melbet.com)\n"
-    message += "For daily odds boost 🚀 use Promo code BST on 1Xbet 👉 [1xbet.com](http://1xbet.com)"
-    
+    message += "Get 200% bonus 💰 on Melbet, use Promo code: ml\\_242274 👉 [melbet.com](https://bit.ly/melbetregistrationbonuss)\n"
+
     await send_message_to_channel(bot, message)
 
     return message
@@ -160,7 +162,7 @@ async def main():
     scheduler.start()
 
     # Schedule the job to run daily at 7:00
-    scheduler.add_job(format_and_send_fixtures, 'cron', hour=11, minute=31, args=[bot])
+    scheduler.add_job(format_and_send_fixtures, 'cron', hour=0, minute=50, args=[bot])
 
     try:
         # Keep the script running
