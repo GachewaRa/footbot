@@ -43,7 +43,7 @@ def fetch_predictions(fixture_id):
         return None
 
 def fetch_fixtures():
-    leagues = ["333", "71"]  # Replace with league IDs for the leagues you want to be displayed
+    leagues = ["333", "71", "227", "387", "330", "108", "343"]  # Replace with league IDs for the leagues you want to be displayed
     all_fixtures = []
     league_fixtures = defaultdict(list)
 
@@ -105,14 +105,15 @@ async def format_and_send_fixtures(bot):
     message = "*⚽ Next 24 hours matches and predictions 🤑*\n\n"
     
     for league_id, fixtures in league_fixtures.items():
-        if fixtures:
+        valid_fixtures = [f for f in fixtures if f['prediction'] != "No predictions available"]
+        if valid_fixtures:
             # Add league title
-            message += f"*⚽ {fixtures[0]['country']} - {fixtures[0]['league_name']} Fixtures*\n\n"
+            message += f"*⚽ {valid_fixtures[0]['country']} - {valid_fixtures[0]['league_name']} Fixtures*\n\n"
             
-            for i, fixture in enumerate(fixtures, 1):
-                #match_time = datetime.fromisoformat(fixture['match_time']).strftime('%H:%M')
+            for i, fixture in enumerate(valid_fixtures, 1):
+                prediction = fixture['prediction'].replace('*', r'\*').replace('_', r'\_').replace('[', r'\[').replace(']', r'\]')
                 message += f"{i}. {fixture['home_team']} vs {fixture['away_team']}\n"
-                message += f"   🏆 Prediction: {fixture['prediction']}\n\n"
+                message += f"   🏆 Prediction: {prediction}\n\n"
             
             # Add a separator between leagues
             message += "\n\n"
@@ -120,15 +121,16 @@ async def format_and_send_fixtures(bot):
     # Remove the last separator
     message = message.rstrip("\n-")
 
-     # Add the promotional sentences
+    # Add the promotional sentences
     message += "\n\n"  # Add some space before the promotional content
-    message += "Get 200% bonus 💰 on Melbet, use Promo code: BNS 👉 melbet.com\n"
-    message += "For daily odds boost 🚀 use Promo code BST on 1Xbet 👉 1xbet.com"
+    message += "Get 200% bonus 💰 on Melbet, use Promo code: BNS 👉 [melbet.com](http://melbet.com)\n"
+    message += "For daily odds boost 🚀 use Promo code BST on 1Xbet 👉 [1xbet.com](http://1xbet.com)"
     
     await send_message_to_channel(bot, message)
 
     return message
-    # Send the combined message
+
+    
     
 
 async def send_message_to_channel(bot, message):
@@ -157,8 +159,8 @@ async def main():
     scheduler = AsyncIOScheduler()
     scheduler.start()
 
-    # Schedule the job to run daily at 16:45
-    scheduler.add_job(format_and_send_fixtures, 'cron', hour=7, minute=0, args=[bot])
+    # Schedule the job to run daily at 7:00
+    scheduler.add_job(format_and_send_fixtures, 'cron', hour=11, minute=31, args=[bot])
 
     try:
         # Keep the script running
